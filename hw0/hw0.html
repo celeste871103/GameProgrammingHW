@@ -21,17 +21,24 @@ body {
 </style>
 </head>
 
-<div id="info">minimal three.js</div>
+<div id="info">minimal three.js
+<br>
+<button id="toggle" style="width:10%">Toggle Turn</button>
+</div>
 <script src="https://threejs.org/build/three.min.js"></script>
 <script src="https://threejs.org/examples/js/controls/OrbitControls.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
 
 
 <body> 
 <script>
 
+var turn = 1;
 var camera, scene, renderer;
 var clock;
 var train;
+var l = 30;
+var switches = 0;
 var angle  = 0;
 
 init();
@@ -56,24 +63,48 @@ function init() {
   scene.add(gridXZ);
  
  ////////////////////////////////////////////////////////////////
-   train = new THREE.Mesh (new THREE.BoxGeometry (10,10,30), new THREE.MeshNormalMaterial());
+   train = new THREE.Group();
+   let trainbody = new THREE.Mesh (new THREE.BoxGeometry (10,10,30), new THREE.MeshNormalMaterial());
+   let chimney = new THREE.Mesh (new THREE.CylinderGeometry (4,4,20, 16), new THREE.MeshNormalMaterial());
+   chimney.position.y = 5;
+   chimney.position.z = -10;
+   train.add(trainbody, chimney);
    scene.add (train);
 }
+$("#toggle").click(function(){
+	turn = !turn;
+});	
 
 function animate() {
-  var radius = 50;
-  
-  train.position.set (radius* Math.cos(angle), 5, -radius* Math.sin(angle));
-train.rotation.y = angle;
+	var radius = 50;
+	train.position.set (l + radius* Math.cos(angle), 5, -radius* Math.sin(angle));
+	train.rotation.y = angle;
+	var dt = clock.getDelta();
+	if(turn == 1){
+		if(l + radius* Math.cos(angle) > 30){
+			l = 30;
+			switches = 0;
+			angle += 0.10472*10*dt*(Math.PI*100+60*2)/(Math.PI*100);
+		}
+		else if(switches == 0 ){
+			angle = Math.PI/2;
+			l-= dt*120/((Math.PI*100+60*2)/(60*2))*2;
+		}
+		if(l + radius* Math.cos(angle) < -30){
+			l = -30;
+			switches = 1;
+			angle += 0.10472*10*dt*(Math.PI*100+60*2)/(Math.PI*100);
+		}
+		else if(switches == 1 ){
+			angle = Math.PI*3/2;
+			l+= dt*120/((Math.PI*100+60*2)/(60*2))*2;
+		}
 
-  var dt = clock.getDelta();
-  angle += 2*0.10472*dt;
-  
-  
-//  console.log (clock.getDelta());
-  
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera);
+
+		console.log (angle);
+		} 
+	requestAnimationFrame(animate);
+	renderer.render(scene, camera);
 
 }
 
