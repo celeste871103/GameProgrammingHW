@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+<style>
+#info {
+  position: absolute;
+  top: 0px;
+  width: 100%;
+  padding: 10px;
+  text-align: center;
+  color: #ffff00
+}
+
+body {
+  overflow: hidden;
+}
+
+</style>
+</head>
+
+<div id="info">Stand to Walk
+<br>
+還沒做完QQ
+</div>
+<script src="https://threejs.org/build/three.min.js"></script>
+<script src="https://threejs.org/examples/js/controls/OrbitControls.js">
+<script src="https://threejs.org/build/three.min.js"></script>
+<script src="https://threejs.org/examples/js/controls/OrbitControls.js">
+</script>
+<script src="https://jyunming-chen.github.io/tutsplus/js/KeyboardState.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+</script>
+
+
+
+<body> 
+<script>
+var camera, scene, renderer;
+const WW = 4;
+const HH = 12;
+var head, torso, lLeg, rLeg;
+var press_button = 0;
+var walk = false;
+var clock = new THREE.Clock();
+var ts;// = -1; // ts < 0 --> not yet started
+var state = 'Stand';
+
+// three STATES: Walk, S2W, Stand
+///// WALK////////////////////////
+
+var poseWalk0 = {
+  lThigh: Math.PI / 6,
+  rThigh: -Math.PI / 6
+}
+var poseWalk1 = {
+  lThigh: -Math.PI / 6,
+  rThigh: +Math.PI / 6
+}
+var keysWalk = [
+  [0, poseWalk0],
+  [0.5, poseWalk1],
+  [1, poseWalk0]
+];
+var TWalk = 2;
+
+////////////////////////////////////////////
+//// STAND //////////
+var poseStand0 = { // stand
+  lThigh: 0,
+  rThigh: 0
+}
+var poseStand1 = { // stand
+  lThigh: 0,
+  rThigh: 0
+}
+var keysStand = [
+  [0, poseStand0],
+  [0.5, poseStand0],
+  [1, poseStand1],
+];
+var TStand = 0.5; // any small amount
+
+//// stand-to-walk //////////
+var poseS2W0 = { // stand
+  lThigh: 0,
+  rThigh: 0
+}
+var poseS2W0 = poseStand1; // end of stand
+var poseS2W1 = {
+  lThigh: -Math.PI / 6,
+  rThigh: 0 // right leg stays still
+}
+var poseS2W12 = {
+  lThigh: 0,
+  rThigh: -Math.PI / 6 // right leg stays still
+}
+var poseS2W2 = poseWalk0; // beginning of walk
+var keysS2W = [
+  [0, poseS2W0],
+  [0.5, poseS2W1],
+  [1, poseS2W2],
+];
+
+var keysW2S1 = [
+  [0, poseS2W2],
+  [0.5, poseS2W1],
+  [1, poseS2W0],
+];
+var keysW2S2 = [
+  [0, poseS2W2],
+  [0.5, poseS2W12],
+  [1, poseS2W0],
+];
+var TS2W = TWalk;
+var keyboard = new KeyboardState();
+//////////////////////////////////////
+
+function keyframeStand(t, T) { // periodic
+  let keys = keysStand;
+  var s = ((t - ts) % T) / T;
+
+  for (var i = 1; i < keys.length; i++) {
+    if (keys[i][0] > s) break;
+  }
+  // take i-1
+  var ii = i - 1;
+  var a = (s - keys[ii][0]) / (keys[ii + 1][0] - keys[ii][0]);
+  intKey = [keys[ii][1].lThigh * (1 - a) + keys[ii + 1][1].lThigh * a,
+    keys[ii][1].rThigh * (1 - a) + keys[ii + 1][1].rThigh * a
+  ];
+  return intKey;
+}
+
+function keyframeS2W(t, T) {
+  if (t - ts > T) { // end of stand
+    console.log('switch to walk');
+    ts = t; // reset ts to start of walk
+    state = 'Walk';
+    // end of S2W: return last frame
+    return [poseS2W2.lThigh, poseS2W2.rThigh];
+  }
+
+  // non-periodic stand-to-walk animation
+  let keys = keysS2W;
+  var s = (t - ts) / T;
+
+  for (var i = 1; i < keys.length; i++) {
+    if (keys[i][0] > s) break;
+  }
+  // take i-1
+  var ii = i - 1;
+  var a = (s - keys[ii][0]) / (keys[ii + 1][0] - keys[ii][0]);
+  intKey = [keys[ii][1].lThigh * (1 - a) + keys[ii + 1][1].lThigh * a,
+    keys[ii][1].rThigh * (1 - a) + keys[ii + 1][1].rThigh * a
+  ];
+  return intKey;
+}
+
+function keyframeWalk(t, T) { // walk; periodic
+  let keys = keysWalk;
+  var s = ((t - ts) % T) / T;
+
+  for (var i = 1; i < keys.length; i++) {
+    if (keys[i][0] > s) break;
+  }
+  // take i-1
+  var ii = i - 1;
+  var a = (s - keys[ii][0]) / (keys[ii + 1][0] - keys[ii][0]);
+  intKey = [keys[ii][1].lThigh * (1 - a) + keys[ii + 1][1].lThigh * a,
+    keys[ii][1].rThigh * (1 - a) + keys[ii + 1][1].rThigh * a
+  ];
+  return intKey;
+}
+
+function keyframeW2S(t, T) {
+console.log(ts);
+console.log(t);
+  if (t - ts >= T) { // end of walk
+    console.log('switch to stand');
+    ts = t; // reset ts to start of walk
+    state = 'Stand';
+    // end of S2W: return last frame
+    return [0, 0];
+  }
+	var last_walk_pose = {
+	lThigh: lLeg.rotation.x,
+	rThigh: rLeg.rotation.x
+	}
+  // non-periodic stand-to-walk animation
+  let keys = [
+  [0, poseS2W2],
+  [0.5, poseS2W1],
+  [1, poseS2W0],
+];
+  var s = ((t - ts) % T) / T;
+
+  for (var i = 1; i < keys.length; i++) {
+    if (keys[i][0] > s) break;
+  }
+  // take i-1
+  var ii = i - 1;
+  var a = (s - keys[ii][0]) / (keys[ii + 1][0] - keys[ii][0]);
+  intKey = [keys[ii][1].lThigh * (1 - a) + keys[ii + 1][1].lThigh * a,
+    keys[ii][1].rThigh * (1 - a) + keys[ii + 1][1].rThigh * a
+  ];
+  return intKey;
+}
+//////////////////////////////
+init();
+animate();
+
+
+function init() {
+
+  scene = new THREE.Scene();
+
+  renderer = new THREE.WebGLRenderer();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x888888);
+  document.body.appendChild(renderer.domElement);
+
+  camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 1000);
+  camera.position.set(0, 100, 125);
+  let controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+  //document.addEventListener('pointerdown', PointerDown, false); ////////////////////////////////////////////////////////////////
+  var gridXZ = new THREE.GridHelper(200, 20, 'red', 'white');
+  scene.add(gridXZ);
+
+  buildSteve();
+
+  //////////////////////////////////////
+  /// initial pose
+  //  head.rotation.y = Math.PI/6;
+  lLeg.rotation.x = 0; //Math.PI / 6;
+  rLeg.rotation.x = 0; //-Math.PI / 6;
+
+  state = 'Stand';
+  ts = clock.getElapsedTime();
+}
+
+function buildSteve() {
+  head = buildHead();
+  torso = buildTorso();
+  torso.add(head);
+  head.position.y = HH;
+  scene.add(torso);
+  torso.position.set(0, HH, 0);
+
+  lLeg = buildLLeg();
+  torso.add(lLeg);
+  lLeg.position.set(WW / 2, 0, 0);
+  rLeg = buildRLeg();
+  torso.add(rLeg);
+  rLeg.position.set(-WW / 2, 0, 0);
+}
+
+function buildHead() {
+  let head = new THREE.Group();
+  let mesh = new THREE.Mesh(new THREE.BoxGeometry(2 * WW, 2 * WW, 2 * WW), new THREE.MeshNormalMaterial());
+  head.add(mesh);
+  mesh.position.y = WW;
+  return head;
+}
+
+function buildLLeg() {
+  let lLeg = new THREE.Group();
+  let mesh = new THREE.Mesh(new THREE.BoxGeometry(WW, HH, WW), new THREE.MeshNormalMaterial());
+  lLeg.add(mesh);
+  mesh.position.y = -HH / 2;
+  return lLeg;
+}
+
+function buildRLeg() {
+  let rLeg = new THREE.Group();
+  let mesh = new THREE.Mesh(new THREE.BoxGeometry(WW, HH, WW), new THREE.MeshNormalMaterial());
+  rLeg.add(mesh);
+  mesh.position.y = -HH / 2;
+  return rLeg;
+}
+
+function buildTorso() {
+  let torso = new THREE.Group();
+  let mesh = new THREE.Mesh(new THREE.BoxGeometry(2 * WW, HH, WW), new THREE.MeshNormalMaterial());
+  torso.add(mesh);
+  mesh.position.y = HH / 2;
+
+  return torso;
+}
+
+function PointerDown(event) {
+  
+}
+
+function animate() {
+	keyboard.update();
+  requestAnimationFrame(animate);
+  render();
+	if (keyboard.down('space')) {
+	  if(press_button == 0 && state == 'Stand'){
+		console.log('left button down');
+		ts = clock.getElapsedTime(); // move ts to start of stand
+		state = 'S2W';
+		let intKey = keyframeS2W(ts, TS2W);
+		lLeg.rotation.x = intKey[0];
+		rLeg.rotation.x = intKey[1];
+		press_button = 1;
+	  }
+	  else if(press_button == 1 && state == 'Walk'){
+		console.log('left button down');
+		ts = clock.getElapsedTime(); // move ts to start of stand
+		state = 'W2S';
+		let intKey = keyframeW2S(ts, TS2W);
+		lLeg.rotation.x = intKey[0];
+		rLeg.rotation.x = intKey[1];
+		press_button = 0;
+	  }
+  }
+  
+  // for better sideview
+  torso.rotation.y = -Math.PI / 2
+  /*
+    let dt = clock.getDelta();
+    let R = 50;
+    let omega = HH/R/T;  
+    theta += omega*dt;
+    torso.position.set (R*Math.cos(theta), HH, -R*Math.sin(theta));
+    torso.rotation.y = Math.PI + theta;
+  */
+
+  // better yet, stay at 'stand' pose (with one frame)
+  //if (ts < 0) return; // not yet started
+  let intKey;
+  switch (state) {
+    case 'Stand':
+      console.log('... in stand');
+      intKey = keyframeStand(clock.getElapsedTime(), TStand);
+      break;
+    case 'S2W':
+      console.log('... in S2W');
+      intKey = keyframeS2W(clock.getElapsedTime(), TS2W);
+      break;
+    case 'Walk':
+      console.log('... in walk');
+      intKey = keyframeWalk(clock.getElapsedTime(), TWalk);
+      break;
+	case 'W2S':
+	  console.log('... in W2S');
+      intKey = keyframeW2S(clock.getElapsedTime(), TS2W);
+      break;
+  }
+  lLeg.rotation.x = intKey[0];
+  rLeg.rotation.x = intKey[1];
+/*
+  if (walk) {
+    console.log('... in walk');
+    let intKey = keyframeWalk(clock.getElapsedTime(), TWalk);
+    lLeg.rotation.x = intKey[0];
+    rLeg.rotation.x = intKey[1];
+  } else { // stand-to-walk
+    console.log('... in S2W');
+    let intKey = keyframeS2W(clock.getElapsedTime(), TS2W);
+    lLeg.rotation.x = intKey[0];
+    rLeg.rotation.x = intKey[1];
+  }
+ */ 
+}
+
+function render() {
+
+  renderer.render(scene, camera);
+
+}
+
+</script>
+</body>
+
+</html>
