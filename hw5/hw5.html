@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+<style>
+#info {
+  position: absolute;
+  top: 0px;
+  width: 100%;
+  padding: 10px;
+  text-align: center;
+  color: #ffff00
+}
+
+body {
+  overflow: hidden;
+}
+
+</style>
+</head>
+<div id="info">Simple Path Following
+</div>
+<script src="https://threejs.org/build/three.min.js"></script>
+<script src="https://threejs.org/examples/js/controls/OrbitControls.js">
+</script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+
+</script>
+
+
+<body> 
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+<script>
+
+
+// IIFE addition of clamp function
+( function( ) {
+      Math.clamp = function(val,min,max) {
+          return Math.min(Math.max(val,min),max);
+      } 
+} )();
+var camera, scene, renderer;
+var pos, vel;
+var agents = [];
+var radius, s = 0;
+class Agent {
+  constructor(pos, mesh) {
+    this.pos = pos.clone();
+    this.vel = new THREE.Vector3();
+    this.force = new THREE.Vector3();
+    this.target = null;
+    this.size = 3;
+    this.mesh = mesh;
+    scene.add (mesh);
+    this.MAXSPEED = 5;
+    this.ARRIVAL_R = 30;
+    
+    // for orientable agent
+    this.angle = 0;
+  }
+  
+  update(dt) {
+    this.accumulateForce();
+    this.vel.add(this.force.clone().multiplyScalar(dt));
+
+		// ARRIVAL: velocity modulation
+    if (this.target) {
+      let diff = this.target.clone().sub(this.pos)
+      let dst = diff.length();
+      if (dst < this.ARRIVAL_R) {
+        this.vel.setLength(dst)
+      }
+    }
+
+		
+    // MAXSPEED modulation
+		let speed = this.vel.length()
+		this.vel.setLength(Math.clamp (speed, 0, this.MAXSPEED))
+		this.pos.add(this.vel.clone().multiplyScalar(dt))
+    this.mesh.position.copy(this.pos)
+    
+    // for orientable agent
+    if (this.vel.length() > 1) {
+	    	this.angle = Math.atan2 (this.vel.y, this.vel.x)
+    		this.mesh.rotation.z = this.angle;
+   	}
+  }
+  setTarget(x,y,z) {
+    if (this.target)
+    	this.target.set(x,y,z);
+    else
+    	this.target = new THREE.Vector3(x,y,z);
+  }
+  targetInducedForce(targetPos, mode=0) { // seek
+    let speed;
+    if (mode === 0)
+    	speed = this.MAXSPEED;
+    else if (mode === 1)
+    	speed = this.vel.length();
+    	
+    return targetPos.clone().sub(this.pos).normalize().multiplyScalar(speed).sub(this.vel)
+  }
+
+  accumulateForce() {
+		this.force.set (0,0,0);
+    if (this.target)
+			this.force.add(this.targetInducedForce(this.target));
+		
+    // path related (for simple straight line)
+	let a = new THREE.Vector3(-10, 0, 0);
+	let b = new THREE.Vector3(-5, 3.5, 0);
+	let c = new THREE.Vector3(0, 0, 0);
+	let d = new THREE.Vector3(6, 3.5, 0);
+	let e = new THREE.Vector3(10, 0, 0);
+	let temp = new THREE.Vector3(0, 0, 0);
+	let u_ab = temp.subVectors(b, a).normalize();
+	temp = new THREE.Vector3(0, 0, 0);
+	let u_bc = temp.subVectors(c, b).normalize();
+	temp = new THREE.Vector3(0, 0, 0);
+	let u_cd = temp.subVectors(d, c).normalize();
+	temp = new THREE.Vector3(0, 0, 0);
+	let u_de = temp.subVectors(e, d).normalize();
+	temp = new THREE.Vector3(0, 0, 0);
+	///Line A(a, b)
+	if(this.pos.x < -5 && this.pos.x >= -15){
+		let posF = this.pos.clone().add (this.vel);
+		let proj = (temp.subVectors(posF, a)).projectOnVector(u_ab);
+		let q = temp.addVectors(proj, a);
+		if(posF.distanceTo(q) > 1){
+			let correction = this.targetInducedForce(q, 1);
+			this.force.add (correction);
+		}
+		console.log(posF.distanceTo(q));
+	}
+	///Line B(b, c)
+	else if(this.pos.x >= -5 && this.pos.x < 0){
+		let posF = this.pos.clone().add (this.vel);
+		let proj = (temp.subVectors(posF, b)).projectOnVector(u_bc);
+		let q = temp.addVectors(proj, b);
+		if(posF.distanceTo(q) > 1){
+			let correction = this.targetInducedForce(q, 1);
+			this.force.add (correction);
+		}
+	}
+	///Line C(c, d)
+	else if(this.pos.x >= 0 && this.pos.x < 5){
+		let posF = this.pos.clone().add (this.vel);
+		let proj = (temp.subVectors(posF, c)).projectOnVector(u_cd);
+		let q = temp.addVectors(proj, c);
+		if(posF.distanceTo(q) > 1){
+			let correction = this.targetInducedForce(q, 1);
+			this.force.add (correction);
+		}
+	}
+	///Line D (d, e)
+	else if(this.pos.x >= 5 && this.pos.x < 15){
+		let posF = this.pos.clone().add (this.vel);
+		let proj = (temp.subVectors(posF, d)).projectOnVector(u_de);
+		let q = temp.addVectors(proj, d);
+		if(posF.distanceTo(q) > 1){
+			let correction = this.targetInducedForce(q, 1);
+			this.force.add (correction);
+		}
+	}
+    
+	
+	}	
+
+}
+
+
+init();
+animate();
+
+function init() {
+
+  renderer = new THREE.WebGLRenderer({
+    antialias: true
+  });
+
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x888888);
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.OrthographicCamera(-10, 10, 10, -10, -10, 100);
+  camera.position.z = 10;
+
+	let grid = new THREE.GridHelper (20,10, 'red','white');
+  grid.rotation.x = -Math.PI/2;
+  scene.add (grid);
+  /////////////////////////////////////////////////////////
+  
+  radius = 1;
+  let path = new THREE.Mesh (new THREE.PlaneGeometry(7,radius*2), new THREE.MeshBasicMaterial({color:'yellow', transparent:true, opacity:0.2}));
+  path.rotation.z = Math.PI / 6;
+  path.position.x = -7.5;
+  path.position.y = 1.3;
+  //path.pos(0, 5, 0);
+	scene.add (path);
+	let path1 = new THREE.Mesh (new THREE.PlaneGeometry(7,radius*2), new THREE.MeshBasicMaterial({color:'yellow', transparent:true, opacity:0.2}));
+  path1.rotation.z = -Math.PI / 6;
+  path1.position.x = -2.5;
+  path1.position.y = 1.3;
+  //path.pos(0, 5, 0);
+	scene.add (path1); 
+	let path2 = new THREE.Mesh (new THREE.PlaneGeometry(7,radius*2), new THREE.MeshBasicMaterial({color:'yellow', transparent:true, opacity:0.2}));
+  path2.rotation.z = Math.PI / 6;
+  path2.position.x = 2.5;
+  path2.position.y = 1.3;
+  //path.pos(0, 5, 0);
+	scene.add (path2); 
+	let path3 = new THREE.Mesh (new THREE.PlaneGeometry(7,radius*2), new THREE.MeshBasicMaterial({color:'yellow', transparent:true, opacity:0.2}));
+  path3.rotation.z = -Math.PI / 6;
+  path3.position.x = 7.5;
+  path3.position.y = 1.3;
+  //path.pos(0, 5, 0);
+	scene.add (path3); 
+  
+  setTimeout (newAnt,0);
+}
+
+function newAnt () {
+  let randColor = Math.random()*0xffffff;
+  let circle = new THREE.Mesh (new THREE.CircleGeometry(0.1,20), new THREE.MeshBasicMaterial({color:randColor}));
+
+	let pos = new THREE.Vector3(-10,(-1+Math.random()*2),0);
+	let agent = new Agent (pos, circle);
+  agent.vel.set (0.5,0.2,0);
+  agents.push (agent);
+  //console.log(agent.pos);
+  if (agents.length < 100)
+  	setTimeout (newAnt, 1000); 
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  render();
+  
+  let dt = 0.1;
+  agents.forEach (function(agent) {
+  	agent.update(dt)
+  	if (agent.pos.x > 10) 
+    	agent.pos.x = -10;
+  });
+
+  
+}
+
+function render() {
+  renderer.render(scene, camera);
+}
+
+</script>
+</body>
+
+</html>
